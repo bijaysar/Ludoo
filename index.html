@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Ludo Online — Play with Friends</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; font-family: 'Segoe UI', system-ui, sans-serif;
+    background: radial-gradient(circle at top, #1b3440, #0a1419 80%);
+    color: #e9f1f5; min-height: 100vh;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 12px;
+  }
+  .app { max-width: 980px; width: 100%; }
+
+  /* ---------- Lobby ---------- */
+  .lobby { background: #12252e; border-radius: 22px; padding: 28px; box-shadow: 0 20px 50px rgba(0,0,0,.6); }
+  .lobby h1 {
+    margin: 0 0 6px; font-size: 2.4rem; letter-spacing: 4px; text-align: center;
+    background: linear-gradient(135deg, #ffe9a0, #ffd23f, #f39c12);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lobby p.sub { text-align: center; color: #8fa8b3; margin: 0 0 24px; }
+  .lobby label { display: block; font-size: .85rem; color: #8fa8b3; margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase; }
+  .lobby input {
+    width: 100%; padding: 14px 16px; border-radius: 12px; border: none;
+    background: #0b171d; color: #fff; font-size: 1rem; margin-bottom: 16px;
+    outline: none; box-shadow: inset 0 0 0 1px #2b4552;
+  }
+  .lobby input:focus { box-shadow: inset 0 0 0 2px #f1c40f; }
+  .btn {
+    width: 100%; padding: 16px; border: none; border-radius: 12px; font-size: 1.05rem;
+    font-weight: 700; cursor: pointer; letter-spacing: 1px; text-transform: uppercase;
+    transition: .12s; margin-bottom: 12px;
+  }
+  .btn-primary { background: linear-gradient(135deg, #f1c40f, #e67e22); color: #1a1a1a; box-shadow: 0 6px 0 #a97a0f; }
+  .btn-primary:active { transform: translateY(4px); box-shadow: 0 2px 0 #a97a0f; }
+  .btn-secondary { background: #243b44; color: #fff; box-shadow: 0 6px 0 #0f1c22; }
+  .btn-secondary:active { transform: translateY(4px); box-shadow: 0 2px 0 #0f1c22; }
+  .btn-sm { padding: 10px 16px; font-size: .85rem; width: auto; margin: 0; }
+  .divider { text-align: center; color: #56717d; margin: 12px 0; font-size: .8rem; letter-spacing: 2px; }
+  .err { color: #ff6b6b; text-align: center; margin-top: 8px; min-height: 20px; font-size: .9rem; }
+
+  /* ---------- Waiting Room ---------- */
+  .waiting { background: #12252e; border-radius: 22px; padding: 28px; box-shadow: 0 20px 50px rgba(0,0,0,.6); }
+  .roomcode {
+    text-align: center; font-size: 3rem; font-weight: 800; letter-spacing: 10px;
+    color: #ffd23f; margin: 8px 0 4px; text-shadow: 0 4px 20px rgba(255,210,63,.4);
+  }
+  .copyhint { text-align: center; color: #8fa8b3; font-size: .85rem; margin-bottom: 20px; }
+  .players-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .prow {
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    background: #0b171d; border-radius: 12px; box-shadow: inset 0 0 0 1px #1e3742;
+  }
+  .pdot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; }
+  .pname { font-weight: 600; }
+  .pstatus { margin-left: auto; font-size: .8rem; color: #8fa8b3; }
+  .offline { opacity: .4; }
+
+  /* ---------- Game ---------- */
+  .game { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+  @media (max-width: 800px) { .game { grid-template-columns: 1fr; } }
+
+  .board-wrap { background: #12252e; border-radius: 20px; padding: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.6); position: relative; }
+  canvas { display: block; width: 100%; height: auto; border-radius: 14px; background: #1e2f38; }
+
+  .sidebar { display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: #12252e; border-radius: 16px; padding: 14px; box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+  .panel h3 { margin: 0 0 10px; font-size: .8rem; color: #8fa8b3; letter-spacing: 2px; text-transform: uppercase; }
+
+  .turnbox { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; }
+  .turnbox .dot { width: 14px; height: 14px; border-radius: 50%; }
+  .statusmsg { color: #8fa8b3; font-size: .85rem; margin-top: 8px; min-height: 34px; }
+
+  .dicerow { display: flex; gap: 12px; align-items: center; }
+  .dice {
+    width: 68px; height: 68px; background: #f7f7f7; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.6rem; color: #111; box-shadow: 0 6px 0 #9aa5aa; flex-shrink: 0;
+  }
+  .dice.rolling { animation: shake .12s infinite; }
+  @keyframes shake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(9deg)} 75%{transform:rotate(-9deg)} }
+  .rollbtn {
+    flex: 1; padding: 18px; border: none; border-radius: 12px; font-size: 1rem;
+    font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+    background: linear-gradient(135deg, #f1c40f, #e67e22); color: #1a1a1a;
+    box-shadow: 0 6px 0 #a97a0f; transition: .1s;
+  }
+  .rollbtn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #a97a0f; }
+  .rollbtn:disabled { opacity: .35; pointer-events: none; }
+
+  .log { max-height: 140px; overflow-y: auto; font-size: .8rem; color: #a7c0cb; line-height: 1.6; }
+  .log div { padding: 3px 0; border-bottom: 1px dashed #1e3742; }
+
+  .emotes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .emotes button {
+    font-size: 1.4rem; background: #0b171d; border: none; border-radius: 10px;
+    padding: 8px 10px; cursor: pointer; box-shadow: inset 0 0 0 1px #1e3742; transition: .1s;
+  }
+  .emotes button:active { transform: scale(.9); }
+
+  .playerlist { display: flex; flex-direction: column; gap: 6px; }
+  .pi { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #0b171d; font-size: .9rem; }
+  .pi .dot { width: 14px; height: 14px; border-radius: 50%; }
+  .pi.turn { box-shadow: inset 0 0 0 2px #f1c40f; }
+  .pi .tag { margin-left: auto; font-size: .7rem; color: #f1c40f; letter-spacing: 1px; }
+
+  /* floating emotes */
+  .floater {
+    position: fixed; font-size: 2.4rem; pointer-events: none; z-index: 999;
+    animation: floatUp 2.2s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translateY(20px) scale(.5); }
+    15% { opacity: 1; transform: translateY(0) scale(1.1); }
+    100% { opacity: 0; transform: translateY(-220px) scale(.7); }
+  }
+
+  .winbanner {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.7); z-index: 1000; flex-direction: column; gap: 20px;
+    animation: fadeIn .4s;
+  }
+  .winbanner h2 { font-size: 3rem; margin: 0; }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== LOBBY ===== -->
+  <div id="lobby" class="lobby">
+    <h1>LUDO</h1>
+    <p class="sub">Play online with friends — free & instant</p>
+    <label>Your name</label>
+    <input id="nameInput" maxlength="14" placeholder="Enter your name" value="" />
+    <button class="btn btn-primary" id="createBtn">Create Room</button>
+    <div class="divider">— or —</div>
+    <label>Room code</label>
+    <input id="codeInput" maxlength="6" placeholder="e.g. AB12C" style="text-transform:uppercase" />
+    <button class="btn btn-secondary" id="joinBtn">Join Room</button>
+    <div class="err" id="lobbyErr"></div>
+  </div>
+
+  <!-- ===== WAITING ===== -->
+  <div id="waiting" class="waiting hidden">
+    <p class="sub" style="text-align:center;color:#8fa8b3;margin:0">Share this code with friends</p>
+    <div class="roomcode" id="roomCodeDisplay">------</div>
+    <p class="copyhint">They open the same link and enter this code</p>
+    <div class="players-list" id="waitPlayers"></div>
+    <button class="btn btn-primary" id="startBtn">Start Game</button>
+    <div class="err" id="waitErr"></div>
+  </div>
+
+  <!-- ===== GAME ===== -->
+  <div id="gameScreen" class="game hidden">
+    <div class="board-wrap">
+      <canvas id="board" width="600" height="600"></canvas>
+    </div>
+    <div class="sidebar">
+      <div class="panel">
+        <h3>Turn</h3>
+        <div class="turnbox"><span class="dot" id="turnDot" style="background:#e74c3c"></span><span id="turnName">—</span></div>
+        <div class="statusmsg" id="statusMsg">Waiting…</div>
+      </div>
+      <div class="panel">
+        <h3>Dice</h3>
+        <div class="dicerow">
+          <div class="dice" id="diceEl">⚀</div>
+          <button class="rollbtn" id="rollBtn">Roll</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Players</h3>
+        <div class="playerlist" id="gamePlayers"></div>
+      </div>
+      <div class="panel">
+        <h3>Log</h3>
+        <div class="log" id="logEl"></div>
+      </div>
+      <div class="panel">
+        <h3>Emotes</h3>
+        <div class="emotes" id="emoteRow"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   LUDO ONLINE — CLIENT
+   ========================================================= */
+const socket = io();
+
+const COLORS = { red:'#e74c3c', green:'#2ecc71', yellow:'#f1c40f', blue:'#3498db' };
+const COLOR_ORDER = ['red','green','yellow','blue'];
+const EMOJIS = ['👍','😂','🎉','😮','🔥','😭','💪','👑'];
+
+const cv = document.getElementById('board');
+const ctx = cv.getContext('2d');
+const N = 15;
+const CELL = cv.width / N;
+const MAX_POS = 56;
+
+// ---------- track (52 cells) ----------
+const TRACK = [
+  {r:6,c:0},{r:6,c:1},{r:6,c:2},{r:6,c:3},{r:6,c:4},{r:6,c:5},
+  {r:5,c:6},{r:4,c:6},{r:3,c:6},{r:2,c:6},{r:1,c:6},{r:0,c:6},
+  {r:0,c:7},{r:0,c:8},
+  {r:1,c:8},{r:2,c:8},{r:3,c:8},{r:4,c:8},{r:5,c:8},
+  {r:6,c:9},{r:6,c:10},{r:6,c:11},{r:6,c:12},{r:6,c:13},{r:6,c:14},
+  {r:7,c:14},{r:8,c:14},
+  {r:8,c:13},{r:8,c:12},{r:8,c:11},{r:8,c:10},{r:8,c:9},{r:8,c:8},
+  {r:9,c:8},{r:10,c:8},{r:11,c:8},{r:12,c:8},{r:13,c:8},{r:14,c:8},
+  {r:14,c:7},{r:14,c:6},
+  {r:13,c:6},{r:12,c:6},{r:11,c:6},{r:10,c:6},{r:9,c:6},
+  {r:8,c:5},{r:8,c:4},{r:8,c:3},{r:8,c:2},{r:8,c:1},{r:8,c:0}
+];
+const HOME_RED    = [{r:7,c:1},{r:7,c:2},{r:7,c:3},{r:7,c:4},{r:7,c:5}];
+const HOME_GREEN  = [{r:7,c:13},{r:7,c:12},{r:7,c:11},{r:7,c:10},{r:7,c:9}];
+const HOME_YELLOW = [{r:13,c:7},{r:12,c:7},{r:11,c:7},{r:10,c:7},{r:9,c:7}];
+const HOME_BLUE   = [{r:1,c:7},{r:2,c:7},{r:3,c:7},{r:4,c:7},{r:5,c:7}];
+
+const START_IDX = { red:0, green:13, yellow:26, blue:39 };
+const SAFE_ABS = new Set([0,8,13,21,26,34,39,47]);
+
+function trackCell(color, pos) { // pos 0..51
+  return TRACK[(START_IDX[color] + pos) % 52];
+}
+function homeCell(color, pos) { // pos 52..55 → index 0..3, pos 56 = final (index 4)
+  const idx = Math.min(4, Math.max(0, pos - 52));
+  return { red:HOME_RED, green:HOME_GREEN, yellow:HOME_YELLOW, blue:HOME_BLUE }[color][idx];
+}
+function cellCenter(rc) { return { x: rc.c*CELL + CELL/2, y: rc.r*CELL + CELL/2 }; }
+
+// ---------- state ----------
+let state = null;
+let myColor = null;
+let myName = '';
+let myRoom = '';
+let isHost = false;
+
+// ---------- screen helpers ----------
+const lobbyEl = document.getElementById('lobby');
+const waitingEl = document.getElementById('waiting');
+const gameEl = document.getElementById('gameScreen');
+
+function show(el) {
+  [lobbyEl, waitingEl, gameEl].forEach(e => e.classList.add('hidden'));
+  el.classList.remove('hidden');
+}
+
+// ---------- lobby ----------
+document.getElementById('nameInput').value = localStorage.getItem('ludoName') || '';
+document.getElementById('createBtn').addEventListener('click', () => {
+  const name = document.getElementById('nameInput').value.trim() || 'Player';
+  myName = name;
+  localStorage.setItem('ludoName', name);
+  socket.emit('createRoom', { name }, (res) => {
+    if (!res.ok) return setErr(res.error);
+    myRoom = res.code;
+    myColor = res.color;
+    isHost = true;
+    showWaiting();
+  });
+});
+document.getElementById('joinBtn').addEventListener('click', () => {
+  const name = document.getElementById('nameInput').value.trim() || 'Player';
+  const code = document.getElementById('codeInput').value.trim().toUpperCase();
+  if (!code) return setErr('Enter a room code');
+  myName = name;
+  localStorage.setItem('ludoName', name);
+  socket.emit('joinRoom', { code, name }, (res) => {
+    if (!res.ok) return setErr(res.error);
+    myRoom = res.code;
+    myColor = res.color;
+    isHost = false;
+    showWaiting();
+  });
+});
+function setErr(msg) { document.getElementById('lobbyErr').textContent = msg; }
+
+// ---------- waiting ----------
+function showWaiting() {
+  show(waitingEl);
+  document.getElementById('roomCodeDisplay').textContent = myRoom;
+  const startBtn = document.getElementById('startBtn');
+  startBtn.style.display = isHost ? 'block' : 'none';
+}
+document.getElementById('startBtn').addEventListener('click', () => {
+  socket.emit('startGame');
+});
+
+// ---------- socket events ----------
+socket.on('state', (s) => {
+  state = s;
+  if (s.winner) return showWin(s.winner);
+  if (s.started) {
+    show(gameEl);
+    renderGame();
+  } else {
+    show(waitingEl);
+    renderWaiting();
+  }
+});
+socket.on('errMsg', (msg) => {
+  document.getElementById('waitErr').textContent = msg;
+  setTimeout(()=>document.getElementById('waitErr').textContent='', 3000);
+});
+socket.on('emote', ({ name, emoji, color }) => {
+  const el = document.createElement('div');
+  el.className = 'floater';
+  el.textContent = emoji;
+  el.style.left = (20 + Math.random()*60) + '%';
+  el.style.top = (30 + Math.random()*30) + '%';
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2200);
+});
+
+// ---------- waiting render ----------
+function renderWaiting() {
+  if (!state) return;
+  const list = document.getElementById('waitPlayers');
+  list.innerHTML = '';
+  state.players.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'prow';
+    row.innerHTML = `<span class="pdot" style="background:${COLORS[p.color]}"></span>
+                     <span class="pname">${p.name}${p.id===myColor?' (you)':''}</span>
+                     <span class="pstatus">${p.connected ? 'ready' : 'offline'}</span>`;
+    list.appendChild(row);
+  });
+  const startBtn = document.getElementById('startBtn');
+  if (isHost) startBtn.textContent = state.players.length >= 2 ? 'Start Game' : 'Wait for players…';
+  startBtn.disabled = state.players.length < 2;
+}
+
+// ---------- game render ----------
+function renderGame() {
+  if (!state) return;
+
+  // players list
+  const pl = document.getElementById('gamePlayers');
+  pl.innerHTML = '';
+  state.players.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'pi' + (i === state.current ? ' turn' : '');
+    d.innerHTML = `<span class="dot" style="background:${COLORS[p.color]}"></span>
+      <span>${p.name}${p.color===myColor?' (you)':''}</span>
+      ${i===state.current ? '<span class="tag">TURN</span>' : ''}`;
+    pl.appendChild(d);
+  });
+
+  // turn
+  const cur = state.players[state.current];
+  if (cur) {
+    document.getElementById('turnDot').style.background = COLORS[cur.color];
+    document.getElementById('turnName').textContent = cur.name + "'s turn";
+  }
+
+  // dice
+  const diceEl = document.getElementById('diceEl');
+  if (state.dice) diceEl.textContent = ['⚀','⚁','⚂','⚃','⚄','⚅'][state.dice-1];
+  else diceEl.textContent = '⚀';
+
+  // roll button
+  const rollBtn = document.getElementById('rollBtn');
+  const myTurn = cur && cur.color === myColor;
+  rollBtn.disabled = !myTurn || state.rolled || !!state.winner;
+
+  // status message
+  const sm = document.getElementById('statusMsg');
+  if (state.winner) sm.textContent = 'Game over!';
+  else if (state.rolled && myTurn) {
+    const movable = getMyMovable();
+    if (movable.length === 0) sm.textContent = 'No moves available — waiting for others…';
+    else sm.textContent = `You rolled ${state.dice}. Click a highlighted token.`;
+  } else if (myTurn) sm.textContent = 'Your turn — roll the dice!';
+  else sm.textContent = `${cur ? cur.name : ''} is playing…`;
+
+  // log
+  const logEl = document.getElementById('logEl');
+  logEl.innerHTML = state.log.slice().reverse().map(l => `<div>${l}</div>`).join('');
+
+  draw();
+}
+
+// ---------- helpers for move highlighting ----------
+function canMoveToken(color, tokenIdx) {
+  if (!state || !state.dice || state.winner) return false;
+  const t = state.tokens[color][tokenIdx];
+  if (!t || t.pos === MAX_POS) return false;
+  if (t.pos === -1) return state.dice === 6;
+  return t.pos + state.dice <= MAX_POS;
+}
+function getMyMovable() {
+  const out = [];
+  for (let i=0;i<4;i++) if (canMoveToken(myColor, i)) out.push(i);
+  return out;
+}
+
+// ---------- drawing ----------
+function draw() {
+  if (!state) return;
+  ctx.clearRect(0,0,cv.width,cv.height);
+
+  // background grid
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++){
+    let col = '#2d4a57';
+    if ((r<6&&c<6)||(r<6&&c>8)||(r>8&&c<6)||(r>8&&c>8)) col='#1a303a';
+    if ((r>=6&&r<=8&&(c<6||c>8))||(c>=6&&c<=8&&(r<6||r>8))) col='#2f5563';
+    if (r>=6&&r<=8&&c>=6&&c<=8) col='#3a6878';
+    ctx.fillStyle = col;
+    ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+    ctx.strokeStyle = '#152b34'; ctx.lineWidth = 1;
+    ctx.strokeRect(c*CELL, r*CELL, CELL, CELL);
+  }
+
+  // safe cells
+  SAFE_ABS.forEach(abs => {
+    const rc = TRACK[abs];
+    const {x,y} = cellCenter(rc);
+    ctx.beginPath();
+    ctx.arc(x, y, CELL*0.32, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,.12)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.lineWidth = 2; ctx.stroke();
+  });
+
+  // home stretches
+  [{cells:HOME_RED,color:'#e74c3c'},{cells:HOME_GREEN,color:'#2ecc71'},
+   {cells:HOME_YELLOW,color:'#f1c40f'},{cells:HOME_BLUE,color:'#3498db'}].forEach(({cells,color})=>{
+    cells.forEach(cell=>{
+      ctx.fillStyle = color + '55';
+      ctx.fillRect(cell.c*CELL, cell.r*CELL, CELL, CELL);
+    });
+  });
+
+  // corner yards
+  drawYard(0,0,'#e74c3c'); // red top-left
+  drawYard(9,0,'#3498db'); // blue top-right (visual)
+  drawYard(9,9,'#2ecc71'); // green bottom-right
+  drawYard(0,9,'#f1c40f'); // yellow bottom-left
+
+  // center
+  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 30px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('★', cv.width/2, cv.height/2);
+
+  // draw tokens NOT on yard
+  COLOR_ORDER.forEach(color=>{
+    if (!state.tokens[color]) return;
+    state.tokens[color].forEach((t, i)=>{
+      if (t.pos === -1) return;
+      let rc;
+      if (t.pos < 52) rc = trackCell(color, t.pos);
+      else rc = homeCell(color, t.pos - 52);
+      const {x,y} = cellCenter(rc);
+      drawToken(x, y, color, i, t.pos === MAX_POS);
+    });
+  });
+
+  // draw yard tokens (only at home)
+  COLOR_ORDER.forEach(color=>{
+    const yardBase = { red:{r:1,c:1}, green:{r:10,c:10}, yellow:{r:10,c:1}, blue:{r:1,c:10} }[color];
+    state.tokens[color].forEach((t, i)=>{
+      if (t.pos !== -1) return;
+      const off = [{r:1,c:1},{r:3,c:1},{r:1,c:3},{r:3,c:3}][i];
+      const rc = {r:yardBase.r+off.r-1, c:yardBase.c+off.c-1};
+      // adjust so 4 tokens fit nicely
+      const cellR = yardBase.r + (i<2?1:3);
+      const cellC = yardBase.c + (i%2===0?1:3);
+      const {x,y} = cellCenter({r:cellR,c:cellC});
+      drawToken(x, y, color, i, false);
+    });
+  });
+
+  // highlight movable tokens for my turn
+  if (myColor && state.players[state.current]?.color === myColor && state.rolled && !state.winner) {
+    getMyMovable().forEach(i=>{
+      const t = state.tokens[myColor][i];
+      let rc;
+      if (t.pos === -1) {
+        const yardBase = { red:{r:1,c:1}, green:{r:10,c:10}, yellow:{r:10,c:1}, blue:{r:1,c:10} }[myColor];
+        const cellR = yardBase.r + (i<2?1:3);
+        const cellC = yardBase.c + (i%2===0?1:3);
+        rc = {r:cellR,c:cellC};
+      } else if (t.pos < 52) rc = trackCell(myColor, t.pos);
+      else rc = homeCell(myColor, t.pos - 52);
+      const {x,y} = cellCenter(rc);
+      ctx.beginPath();
+      ctx.arc(x, y, CELL*0.5, 0, Math.PI*2);
+      ctx.strokeStyle = '#ffd23f';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([6,4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+  }
+}
+
+function drawYard(baseR, baseC, color) {
+  ctx.fillStyle = color + '22';
+  ctx.fillRect(baseC*CELL, baseR*CELL, 6*CELL, 6*CELL);
+  ctx.strokeStyle = color + '66';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(baseC*CELL, baseR*CELL, 6*CELL, 6*CELL);
+}
+
+function drawToken(x, y, color, idx, finished) {
+  ctx.beginPath();
+  ctx.arc(x, y, CELL*0.34, 0, Math.PI*2);
+  ctx.fillStyle = COLORS[color];
+  ctx.shadowColor = COLORS[color];
+  ctx.shadowBlur = finished ? 22 : 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#ffffffdd'; ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(idx+1, x, y);
+}
+
+// ---------- click to move ----------
+cv.addEventListener('click', (e) => {
+  if (!state || !state.rolled || state.winner) return;
+  if (state.players[state.current]?.color !== myColor) return;
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * (cv.width / r.width);
+  const my = (e.clientY - r.top) * (cv.height / r.height);
+
+  const movable = getMyMovable();
+  for (const i of movable) {
+    const t = state.tokens[myColor][i];
+    let rc;
+    if (t.pos === -1) {
+      const yardBase = { red:{r:1,c:1}, green:{r:10,c:10}, yellow:{r:10,c:1}, blue:{r:1,c:10} }[myColor];
+      const cellR = yardBase.r + (i<2?1:3);
+      const cellC = yardBase.c + (i%2===0?1:3);
+      rc = {r:cellR,c:cellC};
+    } else if (t.pos < 52) rc = trackCell(myColor, t.pos);
+    else rc = homeCell(myColor, t.pos - 52);
+    const {x,y} = cellCenter(rc);
+    if (Math.hypot(mx - x, my - y) < CELL*0.7) {
+      socket.emit('move', { tokenIndex: i });
+      return;
+    }
+  }
+});
+
+// ---------- roll ----------
+document.getElementById('rollBtn').addEventListener('click', () => {
+  socket.emit('roll');
+});
+
+// ---------- emotes ----------
+const emoteRow = document.getElementById('emoteRow');
+EMOJIS.forEach(em => {
+  const b = document.createElement('button');
+  b.textContent = em;
+  b.addEventListener('click', () => socket.emit('emote', { emoji: em }));
+  emoteRow.appendChild(b);
+});
+
+// ---------- winner ----------
+let winShown = false;
+function showWin(color) {
+  if (winShown) return;
+  winShown = true;
+  const player = state?.players.find(p => p.color === color);
+  const banner = document.createElement('div');
+  banner.className = 'winbanner';
+  banner.innerHTML = `
+    <h2 style="color:${COLORS[color]}">🏆 ${player?.name || color.toUpperCase()} WINS! 🏆</h2>
+    <button class="btn btn-primary btn-sm" id="backLobby">Back to Lobby</button>`;
+  document.body.appendChild(banner);
+  document.getElementById('backLobby').onclick = () => {
+    winShown = false;
+    banner.remove();
+    location.reload();
+  };
+}
+
+// ---------- auto-join via ?room=CODE ----------
+window.addEventListener('load', () => {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('room');
+  if (code) {
+    document.getElementById('codeInput').value = code.toUpperCase();
+    document.getElementById('nameInput').focus();
+  }
+});
+</script>
+</body>
+</html>
